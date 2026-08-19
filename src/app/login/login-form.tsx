@@ -9,8 +9,8 @@ import { ErrorNote } from "@/components/ui/feedback";
 import { cn } from "@/lib/utils";
 
 type Mode = "signin" | "signup";
-/** The two password-based ways in. Google is the third option, above these. */
-type Method = "email" | "student_id";
+/** Password sign-in by email or roll number; phone is testing-only. */
+type Method = "email" | "student_id" | "phone";
 
 const field =
   "h-12 w-full rounded-2xl border border-hairline bg-white px-4 text-[16px] " +
@@ -21,9 +21,26 @@ const ERROR_FOR: Record<string, string> = {
   auth: "We couldn't complete that sign-in. Please try again.",
 };
 
+/**
+ * Phone sign-in is a testing affordance, not a student login: Supabase only
+ * accepts a code for numbers whitelisted in its dashboard, and covering every
+ * student would mean paying an SMS provider per message.
+ *
+ * So the Phone tab appears only when this is set, and it then shows and
+ * pre-fills the fixed code. Leave it unset in production — both because the
+ * option would be broken for students, and because a visible code lets anyone
+ * who knows a number sign in as that person.
+ */
+const TEST_OTP = process.env.NEXT_PUBLIC_TEST_OTP;
+
+const SIGN_IN_METHODS: Method[] = TEST_OTP
+  ? ["email", "student_id", "phone"]
+  : ["email", "student_id"];
+
 const METHOD_LABEL: Record<Method, string> = {
   email: "Email",
   student_id: "Student ID",
+  phone: "Phone",
 };
 
 export function LoginForm() {
@@ -32,29 +49,12 @@ export function LoginForm() {
   const [mode, setMode] = useState<Mode>("signin");
   const [method, setMethod] = useState<Method>("email");
   const [busy, setBusy] = useState(false);
+  const [otpSentTo, setOtpSentTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(
     ERROR_FOR[params.get("error") ?? ""] ?? null,
   );
 
   const next = params.get("next") ?? "/";
-
-  async function signInWithGoogle() {
-    setBusy(true);
-    setError(null);
-
-    const { error: err } = await supabaseBrowser().auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
-    });
-
-    if (err) {
-      setError("We couldn't reach Google. Please try again.");
-      setBusy(false);
-    }
-    // On success the browser leaves for Google, so there is nothing else to do.
-  }
 
   async function handleSignIn(form: FormData) {
     const supabase = supabaseBrowser();
@@ -85,6 +85,40 @@ export function LoginForm() {
 
     if (err) {
       setError("Those details didn't match. Please check and try again.");
+      return;
+    }
+    router.replace(next);
+    router.refresh();
+  }
+
+  /**
+   * Phone step one: request the code. Supabase sends a real SMS in production;
+   * numbers listed as test numbers in the dashboard get their fixed code
+   * without any SMS being sent.
+   */
+  async function sendCode(form: FormData) {
+    const raw = String(form.get("phone") ?? "").trim();
+    // Supabase expects E.164. Assume India when no country code is given.
+    const phone = raw.startsWith("+") ? raw : `+91${raw.replace(/\D/g, "")}`;
+
+    const { error: err } = await supabaseBrowser().auth.signInWithOtp({ phone });
+    if (err) {
+      setError("We couldn't send the code. Check the number and try again.");
+      return;
+    }
+    setOtpSentTo(phone);
+  }
+
+  /** Phone step two: verify it. */
+  async function verifyCode(form: FormData) {
+    const { error: err } = await supabaseBrowser().auth.verifyOtp({
+      phone: otpSentTo!,
+      token: String(form.get("code") ?? "").trim(),
+      type: "sms",
+    });
+
+    if (err) {
+      setError("That code wasn't right. Check it, or request a new one.");
       return;
     }
     router.replace(next);
@@ -124,7 +158,9 @@ export function LoginForm() {
 
     const form = new FormData(event.currentTarget);
     try {
-      await (mode === "signup" ? handleSignUp(form) : handleSignIn(form));
+      if (mode === "signup") await handleSignUp(form);
+      else if (method === "phone") await (otpSentTo ? verifyCode(form) : sendCode(form));
+      else await handleSignIn(form);
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -153,26 +189,16 @@ export function LoginForm() {
         ))}
       </div>
 
-      <Button variant="secondary" size="lg" fullWidth disabled={busy} onClick={signInWithGoogle}>
-        <GoogleMark />
-        Continue with Google
-      </Button>
-
-      <div className="my-5 flex items-center gap-3">
-        <span className="h-px flex-1 bg-[color:var(--color-hairline)]" />
-        <span className="text-[12px] uppercase tracking-[0.1em] text-ink-3">or</span>
-        <span className="h-px flex-1 bg-[color:var(--color-hairline)]" />
-      </div>
-
       {mode === "signin" && (
         <div className="mb-4 flex gap-1.5">
-          {(["email", "student_id"] as const).map((m) => (
+          {SIGN_IN_METHODS.map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => {
                 setMethod(m);
                 setError(null);
+                setOtpSentTo(null);
               }}
               className={cn(
                 "press rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors",
@@ -216,6 +242,51 @@ export function LoginForm() {
               Any email works — college or personal. Your student ID is how staff identify you.
             </p>
           </>
+        ) : method === "phone" ? (
+          otpSentTo ? (
+            <>
+              <p className="text-[14px] leading-relaxed text-ink-3">
+                We sent a 6-digit code to{" "}
+                <span className="font-medium text-ink-2">{otpSentTo}</span>.
+              </p>
+              <input
+                name="code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                maxLength={6}
+                defaultValue={TEST_OTP ?? ""}
+                placeholder="Enter the code"
+                className={cn(field, "tracking-[0.35em]")}
+              />
+
+              {TEST_OTP && (
+                <p className="rounded-xl bg-amber/10 px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-2">
+                  Testing mode — the code is{" "}
+                  <span className="font-semibold tabular-nums">{TEST_OTP}</span>. No SMS is sent.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setOtpSentTo(null);
+                  setError(null);
+                }}
+                className="text-[13px] font-medium text-ink-3"
+              >
+                Use a different number
+              </button>
+            </>
+          ) : (
+            <input
+              name="phone"
+              type="tel"
+              required
+              autoComplete="tel"
+              placeholder="Phone number, e.g. 9876543210"
+              className={field}
+            />
+          )
         ) : (
           <>
             <input
@@ -242,7 +313,13 @@ export function LoginForm() {
         {error && <ErrorNote message={error} />}
 
         <Button type="submit" size="lg" fullWidth loading={busy} className="mt-2">
-          {mode === "signup" ? "Create account" : "Sign in"}
+          {mode === "signup"
+            ? "Create account"
+            : method === "phone"
+              ? otpSentTo
+                ? "Verify code"
+                : "Send code"
+              : "Sign in"}
         </Button>
       </form>
 
@@ -259,26 +336,3 @@ export function LoginForm() {
   );
 }
 
-/** Google's mark, inlined — the CSP blocks remote images. */
-function GoogleMark() {
-  return (
-    <svg viewBox="0 0 18 18" className="size-[18px]" aria-hidden focusable="false">
-      <path
-        fill="#4285F4"
-        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62Z"
-      />
-      <path
-        fill="#34A853"
-        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18Z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33Z"
-      />
-      <path
-        fill="#EA4335"
-        d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58Z"
-      />
-    </svg>
-  );
-}
