@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+@theme {
+  /* Neutrals — a warm-tinted grey ramp, closer to iOS than pure grey. */
+  --color-ink: #0b0b0d;
+  --color-ink-2: #3c3c43;
+  --color-ink-3: #8a8a8e;
+  --color-ink-4: #c7c7cc;
+  --color-hairline: rgba(60, 60, 67, 0.12);
+  --color-canvas: #f7f7f9;
+  --color-surface: #ffffff;
+
+  /* One accent, used sparingly. */
+  --color-accent: #ff6b35;
+  --color-accent-soft: #fff1eb;
+  --color-mint: #34c759;
+  --color-amber: #ff9f0a;
+  --color-danger: #ff3b30;
+
+  --radius-xl2: 20px;
+  --radius-xl3: 28px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    Inter, system-ui, sans-serif;
+
+  --shadow-soft: 0 1px 2px rgba(16, 16, 20, 0.04), 0 8px 24px rgba(16, 16, 20, 0.06);
+  --shadow-lift: 0 2px 8px rgba(16, 16, 20, 0.06), 0 20px 48px rgba(16, 16, 20, 0.1);
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* No layout in this app is allowed to scroll sideways. */
+    overflow-x: hidden;
+  }
+
+  /* A very quiet ambient wash. Not a gradient showpiece. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(60rem 40rem at 12% -10%, rgba(255, 107, 53, 0.07), transparent 60%),
+      radial-gradient(50rem 36rem at 92% 8%, rgba(90, 140, 255, 0.06), transparent 60%);
+  }
+
+  button, [role="button"] {
+    touch-action: manipulation;
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+  }
+}
+
+@layer utilities {
+  /* --- Liquid glass. Reserved for surfaces that float over content:
+         nav bars, sheets, the cart bar, the sticky header. Cards in a list
+         use plain white so a long scroll does not turn into visual noise. --- */
+  .glass {
+    background: color-mix(in srgb, white 72%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .glass-strong {
+    background: color-mix(in srgb, white 86%, transparent);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: var(--shadow-lift);
+  }
+
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-xl2);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .hairline {
+    border-color: var(--color-hairline);
+  }
+
+  .press {
+    transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1), opacity 160ms ease;
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+
+  .safe-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      100deg,
+      rgba(0, 0, 0, 0.04) 30%,
+      rgba(0, 0, 0, 0.07) 50%,
+      rgba(0, 0, 0, 0.04) 70%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  @keyframes shimmer {
+    to { background-position: -200% 0; }
+  }
+
+  .rise {
+    animation: rise 280ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
