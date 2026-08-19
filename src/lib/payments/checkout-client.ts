@@ -54,8 +54,10 @@ export async function openCheckout(
       name: "Campus Canteen",
       description: `Order #${context.orderNumber}`,
       order_id: intent.providerOrderId,
-      // UPI first — that is how everyone on campus actually pays.
-      config: { display: { blocks: {}, sequence: ["block.upi"], preferences: { show_default_blocks: true } } },
+      // No custom display config: Razorpay's own checkout already leads with
+      // UPI for INR, and on a phone it offers the UPI-intent app chooser
+      // (GPay, PhonePe, Paytm, FamPay — whatever the student has installed).
+      // Overriding the layout suppressed that list.
       prefill: { name: context.name, email: context.email ?? undefined },
       theme: { color: "#ff6b35" },
       modal: {
